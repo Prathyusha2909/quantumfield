@@ -15,6 +15,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -33,11 +34,15 @@ type Result struct {
 }
 
 type Scanner struct {
-	timeout time.Duration
+	timeout  time.Duration
+	resolver resolver
 }
 
 func New(timeout time.Duration) *Scanner {
-	return &Scanner{timeout: timeout}
+	return &Scanner{
+		timeout:  timeout,
+		resolver: net.DefaultResolver,
+	}
 }
 
 func (scanner *Scanner) Scan(ctx context.Context, domain string, port int) (*Result, error) {
@@ -46,17 +51,12 @@ func (scanner *Scanner) Scan(ctx context.Context, domain string, port int) (*Res
 		return nil, ctx.Err()
 	default:
 	}
-	if err := validateTarget(ctx, domain); err != nil {
+	target, err := scanner.resolveTarget(ctx, domain, port)
+	if err != nil {
 		return nil, err
 	}
 
-	address := net.JoinHostPort(domain, strconv.Itoa(port))
-	dialer := &net.Dialer{Timeout: scanner.timeout}
-	connection, err := tls.DialWithDialer(dialer, "tcp", address, &tls.Config{
-		ServerName:         domain,
-		InsecureSkipVerify: true, // Verification is performed explicitly below so invalid chains can still be inventoried.
-		MinVersion:         tls.VersionTLS10,
-	})
+	connection, err := scanner.dialTLS(ctx, target, tls.VersionTLS10, 0)
 	if err != nil {
 		return nil, fmt.Errorf("TLS connection failed: %w", err)
 	}
@@ -95,7 +95,7 @@ func (scanner *Scanner) Scan(ctx context.Context, domain string, port int) (*Res
 		PEM:                string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})),
 	}
 
-	hstsHeader, hstsChecked := scanner.checkHSTS(domain, port)
+	hstsHeader, hstsChecked := scanner.checkHSTS(ctx, target)
 
 	return &Result{
 		Certificate:   certificate,
@@ -103,42 +103,116 @@ func (scanner *Scanner) Scan(ctx context.Context, domain string, port int) (*Res
 		CipherSuite:   tls.CipherSuiteName(state.CipherSuite),
 		HSTSHeader:    hstsHeader,
 		HSTSChecked:   hstsChecked,
-		SupportsTLS10: scanner.supportsVersion(address, domain, tls.VersionTLS10),
-		SupportsTLS11: scanner.supportsVersion(address, domain, tls.VersionTLS11),
+		SupportsTLS10: scanner.supportsVersion(ctx, target, tls.VersionTLS10),
+		SupportsTLS11: scanner.supportsVersion(ctx, target, tls.VersionTLS11),
 	}, nil
 }
 
-func validateTarget(ctx context.Context, domain string) error {
-	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, domain)
-	if err != nil {
-		return fmt.Errorf("resolve target: %w", err)
-	}
-	if len(addresses) == 0 {
-		return fmt.Errorf("target did not resolve to an IP address")
-	}
-	for _, address := range addresses {
-		ip := address.IP
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() ||
-			ip.IsLinkLocalMulticast() || ip.IsMulticast() {
-			return fmt.Errorf("target resolves to a private or reserved network address")
-		}
-	}
-	return nil
+type resolver interface {
+	LookupIPAddr(context.Context, string) ([]net.IPAddr, error)
 }
 
-func (scanner *Scanner) checkHSTS(domain string, port int) (string, bool) {
-	host := domain
-	if port != 443 {
-		host = net.JoinHostPort(domain, strconv.Itoa(port))
+type resolvedTarget struct {
+	domain  string
+	port    int
+	ip      net.IP
+	address string
+}
+
+var blockedNetworkPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("2001:db8::/32"),
+}
+
+func (scanner *Scanner) resolveTarget(ctx context.Context, domain string, port int) (resolvedTarget, error) {
+	addresses, err := scanner.resolver.LookupIPAddr(ctx, domain)
+	if err != nil {
+		return resolvedTarget{}, fmt.Errorf("resolve target: %w", err)
 	}
+	if len(addresses) == 0 {
+		return resolvedTarget{}, fmt.Errorf("target did not resolve to an IP address")
+	}
+
+	for _, address := range addresses {
+		if !isPublicIP(address.IP) {
+			return resolvedTarget{}, fmt.Errorf("target resolves to a private or reserved network address")
+		}
+	}
+
+	pinnedIP := append(net.IP(nil), addresses[0].IP...)
+	return resolvedTarget{
+		domain:  domain,
+		port:    port,
+		ip:      pinnedIP,
+		address: net.JoinHostPort(pinnedIP.String(), strconv.Itoa(port)),
+	}, nil
+}
+
+func isPublicIP(ip net.IP) bool {
+	if ip == nil || !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsUnspecified() ||
+		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() {
+		return false
+	}
+
+	address, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return false
+	}
+	address = address.Unmap()
+	for _, prefix := range blockedNetworkPrefixes {
+		if prefix.Contains(address) {
+			return false
+		}
+	}
+	return true
+}
+
+func (scanner *Scanner) dialTLS(ctx context.Context, target resolvedTarget, minVersion, maxVersion uint16) (*tls.Conn, error) {
+	dialContext, cancel := context.WithTimeout(ctx, scanner.timeout)
+	defer cancel()
+
+	rawConnection, err := (&net.Dialer{Timeout: scanner.timeout}).DialContext(dialContext, "tcp", target.address)
+	if err != nil {
+		return nil, err
+	}
+
+	connection := tls.Client(rawConnection, &tls.Config{
+		ServerName:         target.domain,
+		InsecureSkipVerify: true, // Verification is performed explicitly so invalid certificates can still be inventoried.
+		MinVersion:         minVersion,
+		MaxVersion:         maxVersion,
+	})
+	if err := connection.HandshakeContext(dialContext); err != nil {
+		_ = rawConnection.Close()
+		return nil, err
+	}
+	return connection, nil
+}
+
+func (scanner *Scanner) checkHSTS(ctx context.Context, target resolvedTarget) (string, bool) {
+	host := target.domain
+	if target.port != 443 {
+		host = net.JoinHostPort(target.domain, strconv.Itoa(target.port))
+	}
+
 	client := &http.Client{
 		Timeout: scanner.timeout,
 		Transport: &http.Transport{
+			DialContext: func(dialContext context.Context, network, _ string) (net.Conn, error) {
+				return (&net.Dialer{Timeout: scanner.timeout}).DialContext(dialContext, network, target.address)
+			},
 			TLSClientConfig: &tls.Config{
-				ServerName:         domain,
+				ServerName:         target.domain,
 				InsecureSkipVerify: true,
 				MinVersion:         tls.VersionTLS10,
 			},
+			TLSHandshakeTimeout: scanner.timeout,
 		},
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -149,6 +223,7 @@ func (scanner *Scanner) checkHSTS(domain string, port int) (string, bool) {
 	if err != nil {
 		return "", false
 	}
+	request = request.WithContext(ctx)
 	request.Header.Set("User-Agent", "QuantumField-TLS-Scanner/1.0")
 	response, err := client.Do(request)
 	if err != nil {
@@ -159,18 +234,11 @@ func (scanner *Scanner) checkHSTS(domain string, port int) (string, bool) {
 	return response.Header.Get("Strict-Transport-Security"), true
 }
 
-func (scanner *Scanner) supportsVersion(address, domain string, version uint16) bool {
-	connection, err := tls.DialWithDialer(
-		&net.Dialer{Timeout: scanner.timeout / 2},
-		"tcp",
-		address,
-		&tls.Config{
-			ServerName:         domain,
-			InsecureSkipVerify: true,
-			MinVersion:         version,
-			MaxVersion:         version,
-		},
-	)
+func (scanner *Scanner) supportsVersion(ctx context.Context, target resolvedTarget, version uint16) bool {
+	probeContext, cancel := context.WithTimeout(ctx, scanner.timeout/2)
+	defer cancel()
+
+	connection, err := scanner.dialTLS(probeContext, target, version, version)
 	if err != nil {
 		return false
 	}

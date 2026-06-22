@@ -27,7 +27,7 @@ export function AuthLayout({ children, title, subtitle }: {
           <div className="mt-10 grid grid-cols-3 gap-3">
             {[
               { icon: KeyRound, text: 'X.509 inventory' },
-              { icon: Binary, text: 'PQC dependency' },
+              { icon: Binary, text: 'Classical dependency' },
               { icon: LockKeyhole, text: 'TLS posture' },
             ].map(({ icon: Icon, text }) => (
               <div key={text} className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-4">
@@ -54,4 +54,3 @@ export function AuthLayout({ children, title, subtitle }: {
     </main>
   )
 }
-

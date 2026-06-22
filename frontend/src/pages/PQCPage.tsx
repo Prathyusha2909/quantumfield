@@ -34,7 +34,7 @@ export default function PQCPage() {
 
   return (
     <>
-      <PageHeader eyebrow="Crypto agility" title="Post-quantum readiness" description="A migration-oriented assessment of classical key dependencies, protocol posture, and certificate rotation agility." />
+      <PageHeader eyebrow="Migration planning" title="Crypto-agility readiness" description="A migration-oriented assessment of classical key dependencies, protocol posture, and certificate rotation practices." />
       {error && <div className="mb-5 rounded-xl border border-rose-400/20 bg-rose-400/10 p-4 text-sm text-rose-300">{error}</div>}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={Atom} label="Portfolio readiness" value={average} detail="Average score across latest asset assessments" tone="cyan" />
@@ -48,7 +48,7 @@ export default function PQCPage() {
           <div className="mx-auto text-center"><ScoreRing score={average} label="portfolio" size={132} /><div className="mt-3 text-xs text-slate-600">Readiness baseline</div></div>
           <div>
             <h2 className="font-medium text-white">What this score means</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-500">QuantumField does not claim the endpoint already uses post-quantum TLS. It measures how much classical cryptography remains, whether modern TLS is in use, and whether certificate operations are agile enough to support a future migration.</p>
+            <p className="mt-2 text-sm leading-6 text-slate-500">This is a rule-based migration-planning signal, not evidence that an endpoint implements post-quantum TLS. It measures classical certificate dependencies, modern TLS adoption, and whether certificate operations are agile enough to support future standards-based changes.</p>
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               {[['80–100', 'Migration leading'], ['50–79', 'Preparation needed'], ['0–49', 'Classical dependency']].map(([range, label]) => <div key={range} className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3"><div className="font-mono text-xs text-cyan-350">{range}</div><div className="mt-1 text-[11px] text-slate-600">{label}</div></div>)}
             </div>
@@ -87,4 +87,3 @@ export default function PQCPage() {
 function Signal({ label, healthy }: { label: string; healthy: boolean }) {
   return <div className="flex items-center gap-2 text-slate-500">{healthy ? <CheckCircle2 size={13} className="text-signal" /> : <CircleOff size={13} className="text-rose-300" />}{label}</div>
 }
-

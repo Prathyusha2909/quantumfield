@@ -22,7 +22,7 @@ const navigation = [
   { label: 'Scan jobs', to: '/scans', icon: Radar },
   { label: 'Findings', to: '/findings', icon: ShieldAlert },
   { label: 'Certificates', to: '/certificates', icon: Fingerprint },
-  { label: 'PQC readiness', to: '/pqc', icon: BarChart3 },
+  { label: 'Crypto agility', to: '/pqc', icon: BarChart3 },
   { label: 'Reports', to: '/reports', icon: FileBarChart },
 ]
 
@@ -114,4 +114,3 @@ export function AppShell() {
     </div>
   )
 }
-

@@ -34,7 +34,7 @@ func (client *Client) Ping(context context.Context) error {
 }
 
 func (client *Client) Enqueue(context context.Context, job ScanJob) error {
-	payload, err := json.Marshal(job)
+	payload, err := encodeScanJob(job)
 	if err != nil {
 		return fmt.Errorf("marshal scan job: %w", err)
 	}
@@ -49,13 +49,28 @@ func (client *Client) Dequeue(context context.Context, timeout time.Duration) (*
 	if len(result) != 2 {
 		return nil, fmt.Errorf("unexpected redis response")
 	}
-	var job ScanJob
-	if err := json.Unmarshal([]byte(result[1]), &job); err != nil {
+	job, err := decodeScanJob([]byte(result[1]))
+	if err != nil {
 		return nil, fmt.Errorf("decode scan job: %w", err)
 	}
-	return &job, nil
+	return job, nil
 }
 
 func (client *Client) Close() error {
 	return client.redis.Close()
+}
+
+func encodeScanJob(job ScanJob) ([]byte, error) {
+	return json.Marshal(job)
+}
+
+func decodeScanJob(payload []byte) (*ScanJob, error) {
+	var job ScanJob
+	if err := json.Unmarshal(payload, &job); err != nil {
+		return nil, err
+	}
+	if job.ScanID == "" || job.AssetID == "" || job.UserID == "" {
+		return nil, fmt.Errorf("scan_id, asset_id, and user_id are required")
+	}
+	return &job, nil
 }

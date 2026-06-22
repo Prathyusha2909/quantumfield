@@ -129,7 +129,7 @@ export default function AssetsPage() {
           </div>
           <div className="table-wrap">
             <table className="data-table">
-              <thead><tr><th>Asset</th><th>Status</th><th>Risk</th><th>PQC readiness</th><th>Last scan</th><th /></tr></thead>
+              <thead><tr><th>Asset</th><th>Status</th><th>Risk</th><th>Crypto agility</th><th>Last scan</th><th /></tr></thead>
               <tbody>
                 {filtered.map((asset) => (
                   <tr key={asset.id}>
@@ -170,4 +170,3 @@ export default function AssetsPage() {
     </>
   )
 }
-

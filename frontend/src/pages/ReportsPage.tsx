@@ -93,7 +93,7 @@ export default function ReportsPage() {
 
           <section className="panel mt-6 overflow-hidden">
             <div className="border-b border-white/[0.06] px-5 py-4"><h2 className="text-sm font-medium text-white">Asset posture appendix</h2></div>
-            <div className="overflow-x-auto"><table className="data-table"><thead><tr><th>Domain</th><th>Status</th><th>Risk score</th><th>PQC readiness</th><th>Last assessed</th></tr></thead><tbody>
+            <div className="overflow-x-auto"><table className="data-table"><thead><tr><th>Domain</th><th>Status</th><th>Risk score</th><th>Crypto agility</th><th>Last assessed</th></tr></thead><tbody>
               {assets.map((asset) => <tr key={asset.id}><td className="font-medium text-slate-200">{asset.domain}:{asset.port}</td><td>{titleCase(asset.status)}</td><td className="font-mono text-amber-300">{asset.current_risk_score}</td><td className="font-mono text-cyan-350">{asset.current_pqc_score}</td><td>{formatDate(asset.last_scanned_at, true)}</td></tr>)}
             </tbody></table></div>
           </section>
@@ -102,4 +102,3 @@ export default function ReportsPage() {
     </>
   )
 }
-

@@ -1,14 +1,22 @@
 # QuantumField
 
-**Post-Quantum TLS, PKI & Crypto-Risk Intelligence Platform**
+**TLS, PKI & Crypto-Risk Intelligence Platform**
 
-QuantumField inventories internet-facing TLS certificates, turns protocol and PKI weaknesses into prioritized findings, and estimates how prepared each endpoint is for a future post-quantum migration.
+QuantumField inventories internet-facing TLS certificates, turns protocol and PKI weaknesses into prioritized findings, and adds a rule-based crypto-agility assessment for future cryptographic migrations.
 
-> QuantumField is a readiness and risk-intelligence platform. It does **not** claim to provide production post-quantum encryption or replace a CA, HSM, certificate manager, or standards-compliant PQC implementation.
+> **Project maturity:** portfolio-grade security engineering prototype with an explicit production-hardening roadmap. It is not presented as a production security service.
 
-![QuantumField dashboard preview](docs/screenshots/dashboard-preview.png)
+## Scope and honest positioning
 
-_Generated product preview based on the implemented dashboard. Run the stack for the live interactive UI._
+QuantumField performs TLS/PKI discovery and risk analysis. Its crypto-agility score can help organize a future post-quantum migration backlog, but the project does **not** implement:
+
+- ML-KEM/Kyber key exchange;
+- ML-DSA/Dilithium signatures;
+- hybrid post-quantum TLS;
+- post-quantum X.509 certificates;
+- a production CA, HSM, or standards-compliant PQC cryptosystem.
+
+The scoring engine is deliberately deterministic and explainable. There is no AI model hidden behind the score, and the repository should not be described as an AI project.
 
 ## Why this project exists
 
@@ -16,7 +24,7 @@ Most TLS tools stop at “valid” or “expired.” QuantumField connects three
 
 - operational TLS hygiene: expiry, trust chain, hostname coverage, HSTS, protocol versions, and key strength;
 - PKI inventory: issuer, subject, SANs, serial number, fingerprint, signature algorithm, public-key algorithm, and lifecycle;
-- crypto agility: RSA/ECC dependency, TLS 1.3 adoption, legacy protocol removal, and certificate rotation readiness.
+- crypto agility: classical RSA/ECC dependency, TLS 1.3 adoption, legacy protocol removal, and certificate rotation readiness.
 
 This makes the project interview-defensible: it performs real network inspection, processes jobs asynchronously, persists evidence, applies explicit scoring models, and presents results in an analyst-focused dashboard.
 
@@ -40,7 +48,7 @@ flowchart LR
 3. The worker resolves the target and rejects private/reserved network destinations.
 4. It retrieves the certificate chain, then verifies trust and hostname coverage independently.
 5. Additional probes inspect the negotiated TLS version, cipher suite, TLS 1.0/1.1 acceptance, and HSTS.
-6. The scoring engine creates findings, a 0–100 risk score, and a 0–100 PQC readiness score.
+6. The scoring engine creates findings, a 0–100 risk score, and a 0–100 crypto-agility score.
 7. PostgreSQL stores immutable scan evidence and updates the asset’s current posture.
 
 ## Features
@@ -53,11 +61,11 @@ flowchart LR
 - independent certificate-chain and hostname validation
 - TLS version, cipher suite, TLS 1.0/1.1, and HSTS inspection
 - persisted findings with severity, evidence, and remediation
-- explainable risk and post-quantum readiness models
-- dashboard, asset drill-down, scan jobs, findings, certificate inventory, PQC readiness, and reports
+- explainable risk and crypto-agility readiness models
+- dashboard, asset drill-down, scan jobs, findings, certificate inventory, crypto-agility readiness, and reports
 - JSON report export
 - Docker Compose, GitHub Actions, and an optional Kubernetes template
-- target validation that blocks obvious loopback, private, link-local, multicast, and reserved-network scans
+- resolve-once DNS pinning that blocks loopback, private, link-local, multicast, documentation, benchmark, and reserved networks
 
 ## Technology
 
@@ -95,6 +103,10 @@ QuantumField123!
 ```
 
 Change `JWT_SECRET`, the database password, and the demo setting before any shared deployment.
+
+## Demo status
+
+No hosted deployment is currently claimed. Run the Compose stack for the live application. A short, reproducible recording plan is available in [docs/DEMO.md](docs/DEMO.md); add a real GIF or MP4 link only after recording the running application.
 
 ## Local development
 
@@ -185,7 +197,7 @@ curl -X POST http://localhost:8080/api/assets \
 | Entity | Important fields | Relationship |
 |---|---|---|
 | `users` | name, email, password hash, role | owns assets |
-| `assets` | domain, port, status, current risk/PQC scores | belongs to user; has scans |
+| `assets` | domain, port, status, current risk/agility scores | belongs to user; has scans |
 | `scans` | status, timing, TLS version, cipher, scores, error | belongs to asset |
 | `certificates` | identity, issuer, validity, algorithms, fingerprint, validation | one per completed scan |
 | `findings` | type, severity, evidence, remediation, status | many per scan |
@@ -217,7 +229,7 @@ Current detections include:
 
 The model is intentionally explainable rather than “AI generated.” A production deployment should tune weights using asset criticality, exposure, compensating controls, policy, and finding age.
 
-## PQC readiness model
+## Crypto-agility readiness model
 
 Readiness starts at 100 and applies explicit deductions:
 
@@ -231,7 +243,7 @@ Readiness starts at 100 and applies explicit deductions:
 
 Grades: A = 80–100, B = 65–79, C = 50–64, D = 30–49, F = 0–29.
 
-This is a preparedness indicator, not proof of post-quantum cryptography. Conventional public Web PKI generally depends on RSA or elliptic curves, so low scores are expected. The useful output is the migration backlog: inventory dependencies, modernize TLS, automate rotation, and prepare for standards-based hybrid/PQC certificate support.
+This is a migration-preparedness indicator, not proof of post-quantum cryptography. Conventional public Web PKI generally depends on RSA or elliptic curves, so low scores are expected. The useful output is the migration backlog: inventory dependencies, modernize TLS, automate rotation, and prepare for standards-based cryptographic changes.
 
 ## Security design
 
@@ -239,8 +251,9 @@ This is a preparedness indicator, not proof of post-quantum cryptography. Conven
 - JWTs contain user ID, role, issue time, and expiry.
 - Inventory queries are scoped to the authenticated user.
 - Duplicate active scans per asset are rejected.
-- Network targets are normalized and resolved before scanning.
-- Loopback, private, unspecified, link-local, and multicast destinations are rejected.
+- Network targets are resolved exactly once per scan.
+- The complete DNS answer set is rejected if any address is loopback, private, unspecified, link-local, multicast, documentation-only, benchmark, carrier-grade NAT, or otherwise reserved.
+- The selected validated IP is pinned for the certificate handshake, HSTS request, and legacy-TLS probes while the original hostname is retained for SNI, HTTP Host, and certificate hostname verification.
 - Certificate verification is explicit, allowing invalid certificates to be inventoried without treating them as trusted.
 - Nginx adds basic browser hardening headers.
 - Secrets are environment-injected and not committed.
@@ -251,7 +264,6 @@ This is a preparedness indicator, not proof of post-quantum cryptography. Conven
 - use an asymmetric identity provider or short-lived tokens with refresh rotation;
 - rate-limit authentication and scan endpoints;
 - add MFA, email verification, password reset, and audit events;
-- pin resolved scan IPs through the entire connection lifecycle to address DNS rebinding;
 - enforce organization-level egress policy and scan authorization;
 - use managed PostgreSQL/Redis with TLS, backups, and secret management;
 - add distributed locks, retries, dead-letter queues, and worker concurrency controls;
@@ -271,7 +283,7 @@ This is a preparedness indicator, not proof of post-quantum cryptography. Conven
 │       ├── models              # Persistent entities
 │       ├── queue               # Redis job client
 │       ├── scanner             # TLS/X.509/HSTS probes
-│       ├── scoring             # Risk and PQC models
+│       ├── scoring             # Risk and crypto-agility models
 │       ├── target              # Domain normalization
 │       └── worker              # Scan orchestration
 ├── frontend/src
@@ -284,7 +296,9 @@ This is a preparedness indicator, not proof of post-quantum cryptography. Conven
 └── .github/workflows/ci.yml
 ```
 
-## Validation
+## Automated validation
+
+The default suite covers password hashing, JWT creation/expiry, queue payload validation, domain normalization, risk scoring, reserved-address rejection, DNS pin selection, and pinned HSTS behavior. CI also starts PostgreSQL and Redis and exercises the complete register → create asset → enqueue scan API flow.
 
 ```bash
 cd backend
@@ -300,10 +314,10 @@ npm run build
 
 ## Resume positioning
 
-**QuantumField — Post-Quantum TLS, PKI & Crypto-Risk Intelligence Platform**
+**QuantumField — TLS, PKI & Crypto-Risk Intelligence Platform**
 
 - Built a Go/React cybersecurity platform that asynchronously scans public TLS endpoints, validates X.509 trust and hostname posture, inventories certificate cryptography, and persists evidence in PostgreSQL.
-- Designed a Redis-backed worker pipeline and explainable 0–100 risk/PQC models covering expiry, chain errors, legacy TLS, HSTS, RSA/ECC dependency, TLS 1.3, and certificate rotation agility.
+- Designed a Redis-backed worker pipeline and explainable 0–100 risk/crypto-agility models covering expiry, chain errors, legacy TLS, HSTS, RSA/ECC dependency, TLS 1.3, and certificate rotation practices.
 - Containerized API, worker, database, queue, and frontend services with Docker Compose; added tenant-scoped JWT authorization, CI checks, and an optional Kubernetes deployment template.
 
 ## License

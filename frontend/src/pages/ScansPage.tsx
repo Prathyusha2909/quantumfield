@@ -37,7 +37,7 @@ export default function ScansPage() {
       {!scans.length ? <EmptyState icon={Radar} title="No scan jobs" message="Start a scan from the asset inventory to see queue and worker activity here." /> : (
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Target</th><th>Queued</th><th>Status</th><th>TLS / cipher</th><th>Risk</th><th>PQC</th><th>Runtime</th></tr></thead>
+            <thead><tr><th>Target</th><th>Queued</th><th>Status</th><th>TLS / cipher</th><th>Risk</th><th>Agility</th><th>Runtime</th></tr></thead>
             <tbody>{scans.map((scan) => (
               <tr key={scan.id}>
                 <td><Link className="font-medium text-slate-200 hover:text-signal" to={`/assets/${scan.asset_id}`}>{scan.asset?.domain || scan.asset_id.slice(0, 8)}</Link><div className="mt-1 font-mono text-[10px] text-slate-700">{scan.id.slice(0, 13)}</div></td>
@@ -55,4 +55,3 @@ export default function ScansPage() {
     </>
   )
 }
-

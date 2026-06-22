@@ -9,10 +9,9 @@ export function Logo({ compact = false }: { compact?: boolean }) {
       {!compact && (
         <div>
           <div className="text-[15px] font-semibold tracking-[0.12em] text-white">QUANTUMFIELD</div>
-          <div className="text-[9px] uppercase tracking-[0.24em] text-slate-500">Crypto-risk intelligence</div>
+          <div className="text-[9px] uppercase tracking-[0.24em] text-slate-500">TLS & PKI intelligence</div>
         </div>
       )}
     </div>
   )
 }
-

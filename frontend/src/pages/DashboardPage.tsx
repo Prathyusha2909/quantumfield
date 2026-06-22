@@ -32,7 +32,7 @@ export default function DashboardPage() {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard icon={Boxes} label="Managed assets" value={data.summary.asset_count} detail={`${data.summary.assessed_count} with completed assessments`} />
             <StatCard icon={Activity} label="Average risk" value={data.summary.average_risk_score} detail="Weighted TLS and PKI exposure · lower is safer" tone="amber" />
-            <StatCard icon={Sparkles} label="PQC readiness" value={data.summary.average_pqc_score} detail="Crypto-agility score across assessed assets" tone="cyan" />
+            <StatCard icon={Sparkles} label="Crypto agility" value={data.summary.average_pqc_score} detail="Migration-readiness score across assessed assets" tone="cyan" />
             <StatCard icon={ShieldAlert} label="Critical findings" value={data.summary.critical_findings} detail="Open findings requiring immediate attention" tone="rose" />
           </div>
 
@@ -60,7 +60,7 @@ export default function DashboardPage() {
                         </div>
                         <div className="flex gap-5 text-[10px] uppercase tracking-wider">
                           <span className="text-slate-600">Risk <b className="ml-1 text-amber-300">{asset.current_risk_score}</b></span>
-                          <span className="text-slate-600">PQC <b className="ml-1 text-cyan-350">{asset.current_pqc_score}</b></span>
+                          <span className="text-slate-600">Agility <b className="ml-1 text-cyan-350">{asset.current_pqc_score}</b></span>
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
@@ -84,7 +84,7 @@ export default function DashboardPage() {
                 <div className="h-28 w-px bg-white/[0.06]" />
                 <div className="text-center">
                   <ScoreRing score={data.summary.average_pqc_score} label="ready" />
-                  <div className="mt-3 text-xs text-slate-500">PQC readiness</div>
+                  <div className="mt-3 text-xs text-slate-500">Crypto agility</div>
                 </div>
               </section>
             </div>
@@ -130,4 +130,3 @@ export default function DashboardPage() {
     </>
   )
 }
-

@@ -70,7 +70,7 @@ export default function AssetDetailsPage() {
 
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
         <div className="panel flex items-center gap-5 p-5"><ScoreRing score={asset.current_risk_score} label="risk" inverse size={88} /><div><div className="text-xs uppercase tracking-wider text-slate-600">Risk score</div><div className="mt-2 text-sm text-slate-300">{asset.current_risk_score >= 70 ? 'Immediate action' : asset.current_risk_score >= 40 ? 'Elevated exposure' : 'Controlled exposure'}</div></div></div>
-        <div className="panel flex items-center gap-5 p-5"><ScoreRing score={asset.current_pqc_score} label="ready" size={88} /><div><div className="text-xs uppercase tracking-wider text-slate-600">PQC readiness</div><div className="mt-2 text-sm text-slate-300">Grade {assessment?.grade || '—'}</div></div></div>
+        <div className="panel flex items-center gap-5 p-5"><ScoreRing score={asset.current_pqc_score} label="agility" size={88} /><div><div className="text-xs uppercase tracking-wider text-slate-600">Crypto agility</div><div className="mt-2 text-sm text-slate-300">Grade {assessment?.grade || '—'}</div></div></div>
         <div className="panel p-5"><div className="text-xs uppercase tracking-wider text-slate-600">Current state</div><div className="mt-4"><Badge value={asset.status} /></div><div className="mt-3 text-xs text-slate-600">{relativeTime(asset.last_scanned_at)}</div></div>
         <div className="panel p-5"><div className="text-xs uppercase tracking-wider text-slate-600">Negotiated transport</div><div className="mt-3 text-xl font-medium text-white">{latestScan?.tls_version || 'Not scanned'}</div><div className="mt-2 truncate font-mono text-[10px] text-slate-600">{latestScan?.cipher_suite || 'Cipher suite pending'}</div></div>
       </div>
@@ -119,7 +119,7 @@ export default function AssetDetailsPage() {
                   ))}
                   <div className="pt-1 text-[11px] leading-5 text-slate-600">{assessment.rationale[0]}</div>
                 </div>
-              ) : <div className="p-8 text-sm text-slate-600">No PQC assessment available.</div>}
+              ) : <div className="p-8 text-sm text-slate-600">No crypto-agility assessment available.</div>}
             </section>
           </div>
 
@@ -140,7 +140,7 @@ export default function AssetDetailsPage() {
           <section className="panel mt-6 overflow-hidden">
             <div className="flex items-center gap-3 border-b border-white/[0.06] px-5 py-4"><CalendarClock size={17} className="text-slate-500" /><h2 className="text-sm font-medium text-white">Scan history</h2></div>
             <div className="overflow-x-auto">
-              <table className="data-table"><thead><tr><th>Started</th><th>Status</th><th>TLS</th><th>Risk</th><th>PQC</th><th>Duration</th></tr></thead><tbody>
+              <table className="data-table"><thead><tr><th>Started</th><th>Status</th><th>TLS</th><th>Risk</th><th>Agility</th><th>Duration</th></tr></thead><tbody>
                 {asset.scans?.map((scan) => <tr key={scan.id}><td>{formatDate(scan.created_at, true)}</td><td><Badge value={scan.status} /></td><td>{scan.tls_version || '—'}</td><td className="font-mono text-amber-300">{scan.risk_score}</td><td className="font-mono text-cyan-350">{scan.pqc_score}</td><td>{scan.duration_ms ? `${scan.duration_ms} ms` : '—'}</td></tr>)}
               </tbody></table>
             </div>
@@ -150,4 +150,3 @@ export default function AssetDetailsPage() {
     </>
   )
 }
-
