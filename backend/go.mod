@@ -10,7 +10,7 @@ require (
 	github.com/redis/go-redis/v9 v9.7.3
 	golang.org/x/crypto v0.33.0
 	gorm.io/driver/postgres v1.5.11
-	gorm.io/gorm v1.25.12
+	gorm.io/gorm v1.31.1
 )
 
 require (
