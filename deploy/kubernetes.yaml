@@ -27,6 +27,9 @@ data:
   GIN_MODE: release
   CORS_ORIGINS: https://quantumfield.example.com
   SCAN_TIMEOUT_SECONDS: "15"
+  MAX_SCAN_RETRIES: "3"
+  # Set this to the actual ingress/reverse-proxy CIDR in your cluster.
+  TRUSTED_PROXIES: ""
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

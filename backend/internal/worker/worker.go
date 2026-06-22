@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/Prathyusha2909/quantumfield/internal/audit"
 	"github.com/Prathyusha2909/quantumfield/internal/models"
 	"github.com/Prathyusha2909/quantumfield/internal/queue"
 	"github.com/Prathyusha2909/quantumfield/internal/scanner"
@@ -60,7 +61,11 @@ func (worker *Worker) process(parent context.Context, job queue.ScanJob) error {
 	if err := worker.DB.Model(&scan).Updates(map[string]any{
 		"status":        models.ScanRunning,
 		"started_at":    &started,
+		"completed_at":  nil,
 		"error_message": "",
+		"retry_count":   job.Attempt,
+		"last_error":    "",
+		"failed_at":     nil,
 	}).Error; err != nil {
 		return fmt.Errorf("mark scan running: %w", err)
 	}
@@ -68,7 +73,7 @@ func (worker *Worker) process(parent context.Context, job queue.ScanJob) error {
 
 	result, err := worker.Scanner.Scan(parent, asset.Domain, asset.Port)
 	if err != nil {
-		worker.fail(job, err.Error())
+		worker.retryOrFail(parent, scan, asset, job, err.Error())
 		return err
 	}
 
@@ -93,13 +98,16 @@ func (worker *Worker) process(parent context.Context, job queue.ScanJob) error {
 			return err
 		}
 		if err := transaction.Model(&scan).Updates(map[string]any{
-			"status":       models.ScanCompleted,
-			"completed_at": &completed,
-			"duration_ms":  completed.Sub(started).Milliseconds(),
-			"risk_score":   riskScore,
-			"pqc_score":    assessment.Score,
-			"tls_version":  result.TLSVersion,
-			"cipher_suite": result.CipherSuite,
+			"status":        models.ScanCompleted,
+			"completed_at":  &completed,
+			"duration_ms":   completed.Sub(started).Milliseconds(),
+			"risk_score":    riskScore,
+			"pqc_score":     assessment.Score,
+			"tls_version":   result.TLSVersion,
+			"cipher_suite":  result.CipherSuite,
+			"error_message": "",
+			"last_error":    "",
+			"failed_at":     nil,
 		}).Error; err != nil {
 			return err
 		}
@@ -111,10 +119,18 @@ func (worker *Worker) process(parent context.Context, job queue.ScanJob) error {
 		}).Error
 	})
 	if err != nil {
-		worker.fail(job, "could not persist scan results")
+		worker.retryOrFail(parent, scan, asset, job, "could not persist scan results")
 		return fmt.Errorf("persist scan: %w", err)
 	}
 
+	uid := asset.UserID
+	audit.Record(worker.DB, audit.Event{
+		UserID:     &uid,
+		Action:     models.AuditScanCompleted,
+		EntityType: "scan",
+		EntityID:   scan.ID,
+		Details:    fmt.Sprintf("%s:%d risk=%d agility=%d", asset.Domain, asset.Port, riskScore, assessment.Score),
+	})
 	log.Printf("scan %s completed for %s:%d (risk=%d pqc=%d)", scan.ID, asset.Domain, asset.Port, riskScore, assessment.Score)
 	return nil
 }
@@ -125,6 +141,66 @@ func (worker *Worker) fail(job queue.ScanJob, message string) {
 		"status":        models.ScanFailed,
 		"completed_at":  &completed,
 		"error_message": message,
+		"last_error":    message,
+		"failed_at":     &completed,
+		"retry_count":   job.Attempt,
 	})
 	worker.DB.Model(&models.Asset{}).Where("id = ?", job.AssetID).Update("status", models.ScanFailed)
+	uid := job.UserID
+	audit.Record(worker.DB, audit.Event{
+		UserID:     &uid,
+		Action:     models.AuditScanFailed,
+		EntityType: "scan",
+		EntityID:   job.ScanID,
+		Details:    message,
+	})
+}
+
+func (worker *Worker) retryOrFail(
+	context context.Context,
+	scan models.Scan,
+	asset models.Asset,
+	job queue.ScanJob,
+	message string,
+) {
+	nextAttempt, shouldRetry := nextRetryAttempt(job.Attempt, scan.MaxRetries)
+	if !shouldRetry {
+		worker.fail(job, message)
+		return
+	}
+
+	retryJob := job
+	retryJob.Attempt = nextAttempt
+	if err := worker.DB.Model(&scan).Updates(map[string]any{
+		"status":        models.ScanQueued,
+		"retry_count":   nextAttempt,
+		"last_error":    message,
+		"error_message": "",
+	}).Error; err != nil {
+		worker.fail(job, fmt.Sprintf("%s; retry state update failed: %v", message, err))
+		return
+	}
+	if err := worker.DB.Model(&asset).Update("status", models.ScanQueued).Error; err != nil {
+		worker.fail(job, fmt.Sprintf("%s; asset retry state update failed: %v", message, err))
+		return
+	}
+	if err := worker.Queue.Enqueue(context, retryJob); err != nil {
+		worker.fail(job, fmt.Sprintf("%s; retry enqueue failed: %v", message, err))
+		return
+	}
+	maxRetries := scan.MaxRetries
+	if maxRetries <= 0 {
+		maxRetries = 3
+	}
+	log.Printf("scan %s retry %d/%d queued: %s", scan.ID, nextAttempt, maxRetries, message)
+}
+
+func nextRetryAttempt(attempt, maxRetries int) (int, bool) {
+	if maxRetries <= 0 {
+		maxRetries = 3
+	}
+	if attempt >= maxRetries {
+		return attempt, false
+	}
+	return attempt + 1, true
 }

@@ -1,0 +1,14 @@
+CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_assets_user_id ON assets(user_id);
+CREATE INDEX IF NOT EXISTS idx_assets_deleted_at ON assets(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_assets_user_risk ON assets(user_id, current_risk_score DESC) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_scans_asset_id ON scans(asset_id);
+CREATE INDEX IF NOT EXISTS idx_scans_status ON scans(status);
+CREATE INDEX IF NOT EXISTS idx_scans_asset_created ON scans(asset_id, created_at DESC) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_certificates_asset_id ON certificates(asset_id);
+CREATE INDEX IF NOT EXISTS idx_certificates_not_after ON certificates(not_after);
+CREATE INDEX IF NOT EXISTS idx_findings_scan_id ON findings(scan_id);
+CREATE INDEX IF NOT EXISTS idx_findings_asset_id ON findings(asset_id);
+CREATE INDEX IF NOT EXISTS idx_findings_severity ON findings(severity);
+CREATE INDEX IF NOT EXISTS idx_findings_asset_severity ON findings(asset_id, severity, created_at DESC) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_pqc_assessments_asset_id ON pqc_assessments(asset_id);

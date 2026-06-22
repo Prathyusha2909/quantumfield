@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Prathyusha2909/quantumfield/internal/audit"
 	"github.com/Prathyusha2909/quantumfield/internal/auth"
 	"github.com/Prathyusha2909/quantumfield/internal/middleware"
 	"github.com/Prathyusha2909/quantumfield/internal/models"
@@ -15,9 +16,10 @@ import (
 )
 
 type Handler struct {
-	DB    *gorm.DB
-	Queue *queue.Client
-	Auth  *auth.Service
+	DB             *gorm.DB
+	Queue          *queue.Client
+	Auth           *auth.Service
+	MaxScanRetries int
 }
 
 type credentials struct {
@@ -81,6 +83,7 @@ func (handler *Handler) Register(context *gin.Context) {
 		context.JSON(http.StatusInternalServerError, gin.H{"error": "could not create session"})
 		return
 	}
+	handler.recordAudit(context, &user.ID, models.AuditUserRegistered, "user", user.ID, "account registered")
 	context.JSON(http.StatusCreated, gin.H{"token": token, "user": user})
 }
 
@@ -93,10 +96,12 @@ func (handler *Handler) Login(context *gin.Context) {
 
 	var user models.User
 	if err := handler.DB.Where("email = ?", strings.ToLower(strings.TrimSpace(request.Email))).First(&user).Error; err != nil {
+		handler.recordAudit(context, nil, models.AuditLoginFailed, "session", "", "unknown account")
 		context.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 		return
 	}
 	if err := handler.Auth.VerifyPassword(user.PasswordHash, request.Password); err != nil {
+		handler.recordAudit(context, &user.ID, models.AuditLoginFailed, "session", user.ID, "invalid password")
 		context.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 		return
 	}
@@ -106,6 +111,7 @@ func (handler *Handler) Login(context *gin.Context) {
 		context.JSON(http.StatusInternalServerError, gin.H{"error": "could not create session"})
 		return
 	}
+	handler.recordAudit(context, &user.ID, models.AuditLoginSuccess, "session", user.ID, "login succeeded")
 	context.JSON(http.StatusOK, gin.H{"token": token, "user": user})
 }
 
@@ -149,6 +155,7 @@ func (handler *Handler) CreateAsset(context *gin.Context) {
 		context.JSON(http.StatusInternalServerError, gin.H{"error": "could not create asset"})
 		return
 	}
+	handler.recordAudit(context, stringPointer(asset.UserID), models.AuditAssetCreated, "asset", asset.ID, asset.Domain)
 	context.JSON(http.StatusCreated, asset)
 }
 
@@ -202,22 +209,32 @@ func (handler *Handler) StartScan(context *gin.Context) {
 		return
 	}
 
-	scan := models.Scan{AssetID: asset.ID, Status: models.ScanQueued}
+	maxRetries := handler.MaxScanRetries
+	if maxRetries <= 0 {
+		maxRetries = 3
+	}
+	scan := models.Scan{AssetID: asset.ID, Status: models.ScanQueued, MaxRetries: maxRetries}
 	if err := handler.DB.Create(&scan).Error; err != nil {
 		context.JSON(http.StatusInternalServerError, gin.H{"error": "could not create scan"})
 		return
 	}
 
-	job := queue.ScanJob{ScanID: scan.ID, AssetID: asset.ID, UserID: asset.UserID}
+	job := queue.ScanJob{ScanID: scan.ID, AssetID: asset.ID, UserID: asset.UserID, Attempt: 0}
 	if err := handler.Queue.Enqueue(context.Request.Context(), job); err != nil {
+		failedAt := time.Now().UTC()
 		handler.DB.Model(&scan).Updates(map[string]any{
 			"status":        models.ScanFailed,
 			"error_message": "failed to enqueue scan",
+			"last_error":    "failed to enqueue scan",
+			"failed_at":     &failedAt,
+			"completed_at":  &failedAt,
 		})
+		handler.recordAudit(context, stringPointer(asset.UserID), models.AuditScanFailed, "scan", scan.ID, "failed to enqueue scan")
 		context.JSON(http.StatusServiceUnavailable, gin.H{"error": "scan queue is unavailable"})
 		return
 	}
 	handler.DB.Model(&asset).Update("status", models.ScanQueued)
+	handler.recordAudit(context, stringPointer(asset.UserID), models.AuditScanQueued, "scan", scan.ID, asset.Domain)
 	context.JSON(http.StatusAccepted, scan)
 }
 
@@ -383,15 +400,35 @@ func (handler *Handler) Dashboard(context *gin.Context) {
 }
 
 func (handler *Handler) ReportSummary(context *gin.Context) {
+	context.JSON(http.StatusOK, handler.buildReport(userID(context)))
+}
+
+func (handler *Handler) ExportReport(context *gin.Context) {
 	uid := userID(context)
-	type severityRow struct {
-		Severity string `json:"severity"`
-		Count    int64  `json:"count"`
-	}
-	type algorithmRow struct {
-		Algorithm string `json:"algorithm"`
-		Count     int64  `json:"count"`
-	}
+	report := handler.buildReport(uid)
+	handler.recordAudit(context, stringPointer(uid), models.AuditReportExported, "report", "", "JSON portfolio report")
+	context.Header("Content-Disposition", "attachment; filename=quantumfield-report.json")
+	context.JSON(http.StatusOK, report)
+}
+
+type reportSummary struct {
+	GeneratedAt                time.Time      `json:"generated_at"`
+	FindingsBySeverity         []severityRow  `json:"findings_by_severity"`
+	CertificatesByAlgorithm    []algorithmRow `json:"certificates_by_algorithm"`
+	CertificatesExpiring90Days int64          `json:"certificates_expiring_90_days"`
+}
+
+type severityRow struct {
+	Severity string `json:"severity"`
+	Count    int64  `json:"count"`
+}
+
+type algorithmRow struct {
+	Algorithm string `json:"algorithm"`
+	Count     int64  `json:"count"`
+}
+
+func (handler *Handler) buildReport(uid string) reportSummary {
 	var severities []severityRow
 	handler.DB.Model(&models.Finding{}).
 		Select("severity, count(*) as count").
@@ -415,12 +452,22 @@ func (handler *Handler) ReportSummary(context *gin.Context) {
 			uid, time.Now(), time.Now().Add(90*24*time.Hour)).
 		Count(&expiring)
 
-	context.JSON(http.StatusOK, gin.H{
-		"generated_at":                  time.Now().UTC(),
-		"findings_by_severity":          severities,
-		"certificates_by_algorithm":     algorithms,
-		"certificates_expiring_90_days": expiring,
-	})
+	return reportSummary{
+		GeneratedAt:                time.Now().UTC(),
+		FindingsBySeverity:         severities,
+		CertificatesByAlgorithm:    algorithms,
+		CertificatesExpiring90Days: expiring,
+	}
+}
+
+func (handler *Handler) ListAuditLogs(context *gin.Context) {
+	var logs []models.AuditLog
+	handler.DB.
+		Where("user_id = ?", userID(context)).
+		Order("created_at DESC").
+		Limit(200).
+		Find(&logs)
+	context.JSON(http.StatusOK, logs)
 }
 
 func (handler *Handler) findAsset(context *gin.Context) (models.Asset, error) {
@@ -431,4 +478,27 @@ func (handler *Handler) findAsset(context *gin.Context) (models.Asset, error) {
 
 func userID(context *gin.Context) string {
 	return context.GetString(middleware.ContextUserID)
+}
+
+func (handler *Handler) recordAudit(
+	context *gin.Context,
+	uid *string,
+	action,
+	entityType,
+	entityID,
+	details string,
+) {
+	audit.Record(handler.DB, audit.Event{
+		UserID:     uid,
+		Action:     action,
+		EntityType: entityType,
+		EntityID:   entityID,
+		IPAddress:  context.ClientIP(),
+		UserAgent:  context.Request.UserAgent(),
+		Details:    details,
+	})
+}
+
+func stringPointer(value string) *string {
+	return &value
 }

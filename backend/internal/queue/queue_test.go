@@ -28,4 +28,7 @@ func TestScanJobDecoderRejectsIncompletePayload(t *testing.T) {
 	if _, err := decodeScanJob([]byte(`not-json`)); err == nil {
 		t.Fatal("expected malformed queue payload to be rejected")
 	}
+	if _, err := decodeScanJob([]byte(`{"scan_id":"s","asset_id":"a","user_id":"u","attempt":-1}`)); err == nil {
+		t.Fatal("expected negative retry attempt to be rejected")
+	}
 }

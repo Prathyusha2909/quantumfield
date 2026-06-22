@@ -15,6 +15,15 @@ const (
 	ScanRunning   = "running"
 	ScanCompleted = "completed"
 	ScanFailed    = "failed"
+
+	AuditLoginSuccess   = "LOGIN_SUCCESS"
+	AuditLoginFailed    = "LOGIN_FAILED"
+	AuditUserRegistered = "USER_REGISTERED"
+	AuditAssetCreated   = "ASSET_CREATED"
+	AuditScanQueued     = "SCAN_QUEUED"
+	AuditScanCompleted  = "SCAN_COMPLETED"
+	AuditScanFailed     = "SCAN_FAILED"
+	AuditReportExported = "REPORT_EXPORTED"
 )
 
 type Base struct {
@@ -75,6 +84,10 @@ type Scan struct {
 	TLSVersion    string         `json:"tls_version" gorm:"size:32"`
 	CipherSuite   string         `json:"cipher_suite" gorm:"size:128"`
 	ErrorMessage  string         `json:"error_message,omitempty" gorm:"type:text"`
+	RetryCount    int            `json:"retry_count" gorm:"not null;default:0"`
+	MaxRetries    int            `json:"max_retries" gorm:"not null;default:3"`
+	LastError     string         `json:"last_error,omitempty" gorm:"type:text"`
+	FailedAt      *time.Time     `json:"failed_at"`
 	Certificate   *Certificate   `json:"certificate,omitempty"`
 	Findings      []Finding      `json:"findings,omitempty"`
 	PQCAssessment *PQCAssessment `json:"pqc_assessment,omitempty"`
@@ -149,5 +162,24 @@ type PQCAssessment struct {
 
 func (assessment *PQCAssessment) BeforeCreate(_ *gorm.DB) error {
 	assessment.EnsureID()
+	return nil
+}
+
+type AuditLog struct {
+	ID         string    `json:"id" gorm:"type:uuid;primaryKey"`
+	UserID     *string   `json:"user_id,omitempty" gorm:"type:uuid;index"`
+	Action     string    `json:"action" gorm:"size:80;not null;index"`
+	EntityType string    `json:"entity_type" gorm:"size:80;not null;index"`
+	EntityID   string    `json:"entity_id,omitempty" gorm:"size:255;index"`
+	IPAddress  string    `json:"ip_address,omitempty" gorm:"size:64"`
+	UserAgent  string    `json:"user_agent,omitempty" gorm:"type:text"`
+	Details    string    `json:"details,omitempty" gorm:"type:text"`
+	CreatedAt  time.Time `json:"created_at" gorm:"index"`
+}
+
+func (auditLog *AuditLog) BeforeCreate(_ *gorm.DB) error {
+	if auditLog.ID == "" {
+		auditLog.ID = uuid.NewString()
+	}
 	return nil
 }

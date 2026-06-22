@@ -1,4 +1,4 @@
-import { BarChart3, Download, FileBarChart, ShieldAlert, TimerReset } from 'lucide-react'
+import { BarChart3, CheckCircle2, Download, FileBarChart, ShieldAlert, TimerReset, XCircle } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { EmptyState, LoadingScreen, PageHeader, StatCard } from '../components/ui'
 import api, { errorMessage } from '../lib/api'
@@ -18,6 +18,8 @@ export default function ReportsPage() {
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [exporting, setExporting] = useState(false)
+  const [exportNotice, setExportNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   useEffect(() => {
     Promise.all([api.get<ReportSummary>('/reports/summary'), api.get<Asset[]>('/assets')])
@@ -32,22 +34,42 @@ export default function ReportsPage() {
   const totalFindings = useMemo(() => report?.findings_by_severity.reduce((sum, item) => sum + item.count, 0) || 0, [report])
   const highRisk = assets.filter((asset) => asset.current_risk_score >= 70).length
 
-  function downloadJSON() {
-    const payload = JSON.stringify({ report, assets }, null, 2)
-    const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }))
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `quantumfield-report-${new Date().toISOString().slice(0, 10)}.json`
-    link.click()
-    URL.revokeObjectURL(url)
+  async function downloadJSON() {
+    setExporting(true)
+    setExportNotice(null)
+    try {
+      const { data } = await api.get<ReportSummary>('/reports/export')
+      const payload = JSON.stringify({ report: data, assets }, null, 2)
+      const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `quantumfield-report-${new Date().toISOString().slice(0, 10)}.json`
+      link.click()
+      URL.revokeObjectURL(url)
+      setExportNotice({ type: 'success', message: 'Report exported and recorded in the audit log.' })
+    } catch (requestError) {
+      setExportNotice({ type: 'error', message: errorMessage(requestError) })
+    } finally {
+      setExporting(false)
+    }
   }
 
   if (loading) return <LoadingScreen />
 
   return (
     <>
-      <PageHeader eyebrow="Portfolio evidence" title="Security reports" description="A concise export of TLS exposure, certificate algorithms, and near-term renewal pressure." action={<button className="btn-secondary" onClick={downloadJSON} disabled={!report}><Download size={15} /> Export JSON</button>} />
+      <PageHeader eyebrow="Portfolio evidence" title="Security reports" description="A concise export of TLS exposure, certificate algorithms, and near-term renewal pressure." action={<button className="btn-secondary" onClick={() => void downloadJSON()} disabled={!report || exporting}><Download size={15} /> {exporting ? 'Exporting…' : 'Export JSON'}</button>} />
       {error && <div className="mb-5 rounded-xl border border-rose-400/20 bg-rose-400/10 p-4 text-sm text-rose-300">{error}</div>}
+      {exportNotice && (
+        <div aria-live="polite" className={`mb-5 flex items-center gap-3 rounded-xl border px-4 py-3 text-sm ${
+          exportNotice.type === 'success'
+            ? 'border-signal/20 bg-signal/10 text-signal'
+            : 'border-rose-400/20 bg-rose-400/10 text-rose-300'
+        }`}>
+          {exportNotice.type === 'success' ? <CheckCircle2 size={17} /> : <XCircle size={17} />}
+          {exportNotice.message}
+        </div>
+      )}
       {!report ? <EmptyState icon={FileBarChart} title="Report unavailable" message="Add and scan assets before generating portfolio evidence." /> : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

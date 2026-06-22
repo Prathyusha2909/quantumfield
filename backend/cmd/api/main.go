@@ -30,9 +30,10 @@ func main() {
 	defer queueClient.Close()
 
 	handler := &httpapi.Handler{
-		DB:    db,
-		Queue: queueClient,
-		Auth:  auth.New(cfg.JWTSecret, cfg.JWTTTL),
+		DB:             db,
+		Queue:          queueClient,
+		Auth:           auth.New(cfg.JWTSecret, cfg.JWTTTL),
+		MaxScanRetries: cfg.MaxScanRetries,
 	}
 	router := httpapi.NewRouter(handler, cfg)
 

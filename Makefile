@@ -1,4 +1,4 @@
-.PHONY: dev down logs test fmt build
+.PHONY: dev down logs test lint fmt build migrate seed
 
 dev:
 	docker compose up --build
@@ -13,10 +13,19 @@ test:
 	cd backend && go test ./...
 	cd frontend && npm run lint && npm run build
 
+lint:
+	cd backend && test -z "$$(gofmt -l ./cmd ./internal ./migrations)" && go vet ./...
+	cd frontend && npm run lint
+
 fmt:
-	cd backend && gofmt -w ./cmd ./internal
+	cd backend && gofmt -w ./cmd ./internal ./migrations
 
 build:
-	cd backend && go build ./cmd/api ./cmd/worker
+	cd backend && go build ./cmd/...
 	cd frontend && npm run build
 
+migrate:
+	docker compose run --rm --build migrate
+
+seed:
+	docker compose run --rm --build seed

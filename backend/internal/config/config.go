@@ -8,30 +8,34 @@ import (
 )
 
 type Config struct {
-	DatabaseURL string
-	RedisAddr   string
-	RedisPass   string
-	RedisDB     int
-	JWTSecret   string
-	JWTTTL      time.Duration
-	APIPort     string
-	CORSOrigins []string
-	ScanTimeout time.Duration
-	SeedDemo    bool
+	DatabaseURL    string
+	RedisAddr      string
+	RedisPass      string
+	RedisDB        int
+	JWTSecret      string
+	JWTTTL         time.Duration
+	APIPort        string
+	CORSOrigins    []string
+	ScanTimeout    time.Duration
+	SeedDemo       bool
+	TrustedProxies []string
+	MaxScanRetries int
 }
 
 func Load() Config {
 	return Config{
-		DatabaseURL: env("DATABASE_URL", "postgres://quantumfield:quantumfield_dev@localhost:5432/quantumfield?sslmode=disable"),
-		RedisAddr:   env("REDIS_ADDR", "localhost:6379"),
-		RedisPass:   os.Getenv("REDIS_PASSWORD"),
-		RedisDB:     envInt("REDIS_DB", 0),
-		JWTSecret:   env("JWT_SECRET", "development-secret-change-me-please"),
-		JWTTTL:      time.Duration(envInt("JWT_TTL_HOURS", 24)) * time.Hour,
-		APIPort:     env("API_PORT", "8080"),
-		CORSOrigins: splitCSV(env("CORS_ORIGINS", "http://localhost:5173")),
-		ScanTimeout: time.Duration(envInt("SCAN_TIMEOUT_SECONDS", 15)) * time.Second,
-		SeedDemo:    envBool("SEED_DEMO", false),
+		DatabaseURL:    env("DATABASE_URL", "postgres://quantumfield:quantumfield_dev@localhost:5432/quantumfield?sslmode=disable"),
+		RedisAddr:      env("REDIS_ADDR", "localhost:6379"),
+		RedisPass:      os.Getenv("REDIS_PASSWORD"),
+		RedisDB:        envInt("REDIS_DB", 0),
+		JWTSecret:      env("JWT_SECRET", "development-secret-change-me-please"),
+		JWTTTL:         time.Duration(envInt("JWT_TTL_HOURS", 24)) * time.Hour,
+		APIPort:        env("API_PORT", "8080"),
+		CORSOrigins:    splitCSV(env("CORS_ORIGINS", "http://localhost:5173")),
+		ScanTimeout:    time.Duration(envInt("SCAN_TIMEOUT_SECONDS", 15)) * time.Second,
+		SeedDemo:       envBool("SEED_DEMO", false),
+		TrustedProxies: splitCSV(os.Getenv("TRUSTED_PROXIES")),
+		MaxScanRetries: envInt("MAX_SCAN_RETRIES", 3),
 	}
 }
 

@@ -96,6 +96,34 @@ func TestRegisterCreateAssetAndQueueScan(t *testing.T) {
 	if job.ScanID != scan.ID || job.AssetID != asset.ID || job.UserID != session.User.ID {
 		t.Fatalf("unexpected queued job: %+v", job)
 	}
+
+	exportResponse := performJSONRequest(t, router, http.MethodGet, "/api/reports/export", session.Token, nil)
+	if exportResponse.Code != http.StatusOK {
+		t.Fatalf("report export returned %d: %s", exportResponse.Code, exportResponse.Body.String())
+	}
+	auditResponse := performJSONRequest(t, router, http.MethodGet, "/api/audit-logs", session.Token, nil)
+	if auditResponse.Code != http.StatusOK {
+		t.Fatalf("audit log returned %d: %s", auditResponse.Code, auditResponse.Body.String())
+	}
+	var auditLogs []models.AuditLog
+	if err := json.Unmarshal(auditResponse.Body.Bytes(), &auditLogs); err != nil {
+		t.Fatal(err)
+	}
+	if len(auditLogs) < 4 {
+		t.Fatalf("expected registration, asset, scan, and report audit events; got %d", len(auditLogs))
+	}
+
+	var finalCode int
+	for index := 0; index < 10; index++ {
+		response := performJSONRequest(t, router, http.MethodPost, "/api/auth/login", "", map[string]any{
+			"email":    email,
+			"password": "wrong-password",
+		})
+		finalCode = response.Code
+	}
+	if finalCode != http.StatusTooManyRequests {
+		t.Fatalf("expected authentication rate limit, got %d", finalCode)
+	}
 }
 
 func performJSONRequest(t *testing.T, handler http.Handler, method, path, token string, body any) *httptest.ResponseRecorder {
