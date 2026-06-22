@@ -1,0 +1,220 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: quantumfield
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: quantumfield-secrets
+  namespace: quantumfield
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: replace-me
+  JWT_SECRET: replace-with-at-least-32-random-characters
+  DATABASE_URL: postgres://quantumfield:replace-me@postgres:5432/quantumfield?sslmode=disable
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: quantumfield-config
+  namespace: quantumfield
+data:
+  POSTGRES_DB: quantumfield
+  POSTGRES_USER: quantumfield
+  REDIS_ADDR: redis:6379
+  API_PORT: "8080"
+  GIN_MODE: release
+  CORS_ORIGINS: https://quantumfield.example.com
+  SCAN_TIMEOUT_SECONDS: "15"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: quantumfield
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: quantumfield
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - configMapRef: { name: quantumfield-config }
+            - secretRef: { name: quantumfield-secrets }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: postgres-data }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: quantumfield
+spec:
+  selector: { app: postgres }
+  ports:
+    - port: 5432
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: quantumfield
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: redis }
+  template:
+    metadata:
+      labels: { app: redis }
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: ["--appendonly", "yes"]
+          ports:
+            - containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 250m, memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: quantumfield
+spec:
+  selector: { app: redis }
+  ports:
+    - port: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: quantumfield
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: quantumfield-api }
+  template:
+    metadata:
+      labels: { app: quantumfield-api }
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/prathyusha2909/quantumfield-api:latest
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef: { name: quantumfield-config }
+            - secretRef: { name: quantumfield-secrets }
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 8
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: quantumfield
+spec:
+  selector: { app: quantumfield-api }
+  ports:
+    - port: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: quantumfield
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: quantumfield-worker }
+  template:
+    metadata:
+      labels: { app: quantumfield-worker }
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/prathyusha2909/quantumfield-worker:latest
+          envFrom:
+            - configMapRef: { name: quantumfield-config }
+            - secretRef: { name: quantumfield-secrets }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: quantumfield
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: quantumfield-frontend }
+  template:
+    metadata:
+      labels: { app: quantumfield-frontend }
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/prathyusha2909/quantumfield-frontend:latest
+          ports:
+            - containerPort: 80
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 250m, memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: quantumfield
+spec:
+  type: LoadBalancer
+  selector: { app: quantumfield-frontend }
+  ports:
+    - port: 80
+      targetPort: 80
